@@ -1,0 +1,243 @@
+---
+title: inclass-week4
+author: Ziyang Ye
+format:
+    html:
+        code-fold: true
+        embed-resources: true
+        self-contained: true
+        theme:
+            light: [cosmo, theme.scss]
+            dark: [cosmo, theme-dark.scss]
+        toc: true
+---
+
+### Activity 1
+
+Write a function to generate random deviates from a Weibull distribution with CDF
+
+
+```{r}
+rweibull_custom <- function(n, k, lambda) {
+  u <- runif(n)
+  
+  # Apply the inverse transform method
+  x <- lambda * (-log(u))^(1/k)
+  
+  return(x)
+}
+
+
+set.seed(123)  
+samples <- rweibull_custom(n = 1000, k = 2, lambda = 1)
+hist(samples, main = "Histogram of Weibull Samples", xlab = "x", col = "lightblue")
+
+```
+### Activity 2
+```{r}
+rbeta_custom <- function(n, alpha, beta) {
+  x <- rgamma(n, shape = alpha, rate = 1)
+  y <- rgamma(n, shape = beta, rate = 1)
+  
+  samples <- x / (x + y)
+  
+  return(samples)
+}
+
+
+set.seed(123) 
+samples <- rbeta_custom(n = 1000, alpha = 2, beta = 3)
+hist(samples, main = "Histogram of Beta(2,3) Samples", xlab = "x", col = "lightblue")
+
+```
+### Activity 3
+```{r}
+vonmises_kernel <- function(angle, mean, concentration) {
+  exp(concentration * cos(angle - mean))
+}
+
+```
+
+
+```{r}
+
+r_vonmises <- function(num_samples, mean, concentration) {
+  result <- numeric(num_samples)
+  exp_half_conc <- exp(concentration / 2)
+  
+
+  u_upper_bound <- exp_half_conc
+  v_lower_bound <- -2 * exp_half_conc * pi
+  v_upper_bound <-  2 * exp_half_conc * pi
+  
+  iteration_count <- 0
+  accepted_count  <- 0  
+  
+  while (accepted_count < num_samples) {
+    iteration_count <- iteration_count + 1
+    
+
+    u_sample <- runif(1, 0, u_upper_bound)
+    v_sample <- runif(1, v_lower_bound, v_upper_bound)
+    
+    candidate_angle <- v_sample / u_sample
+    
+    if (candidate_angle > mean - pi && candidate_angle <= mean + pi &&
+        u_sample <= exp(concentration * cos(candidate_angle - mean) / 2)) {
+      accepted_count <- accepted_count + 1
+      result[accepted_count] <- candidate_angle
+    }
+  }
+  
+
+  attr(result, "efficiency") <- num_samples / iteration_count
+  result
+}
+
+
+set.seed(01505752)
+sample_angle <- r_vonmises(1, 0, 1)
+sample_angle
+
+```
+
+### Activity 4
+```{r}
+
+set.seed(01505752)
+num_samples <- 50
+mean_direction <- 0
+concentration_param <- 2
+
+
+sample_angles <- r_vonmises(num_samples, mean_direction, concentration_param)
+
+
+circular_mean <- atan2(mean(sin(sample_angles)), mean(cos(sample_angles)))
+
+
+R_bar <- sqrt(mean(cos(sample_angles))^2 + mean(sin(sample_angles))^2)
+
+cat("（mean direction）：", circular_mean, "\n")
+cat("R_bar：", R_bar, "\n")
+
+
+estimate_kappa <- function(angles) {
+  n <- length(angles)
+  R_bar_sample <- sqrt(mean(cos(angles))^2 + mean(sin(angles))^2)
+
+  f <- function(kappa) {
+    sqrt(1/n + (n-1)/n * (besselI(kappa, 1)^2 / besselI(kappa, 0)^2)) - R_bar_sample
+  }
+  
+
+  sol <- uniroot(f, lower = 0, upper = 100)
+  sol$root
+}
+
+
+kappa_hat <- estimate_kappa(sample_angles)
+cat("original kappa：", kappa_hat, "\n")
+
+
+B <- 1000        
+kappa_boot <- numeric(B)
+
+for (b in 1:B) {
+  boot_sample <- sample(sample_angles, size = num_samples, replace = TRUE)
+  kappa_boot[b] <- estimate_kappa(boot_sample)
+}
+
+
+hist(kappa_boot, breaks = 30, main = "Bootstrap kappa plot", 
+     xlab = expression(hat(kappa)), col = "lightblue", border = "gray")
+abline(v = kappa_hat, col = "red", lwd = 2, lty = 2)
+legend("topright", legend = paste("original kappa =", round(kappa_hat, 3)),
+       col = "red", lwd = 2, lty = 2, bty = "n")
+
+boot_mean <- mean(kappa_boot)
+boot_var  <- var(kappa_boot)
+
+cat("Bootstrap kappa mean：", boot_mean, "\n")
+cat("Bootstrap kappa Var：", boot_var, "\n")
+
+```
+### Activity 5
+
+```{r}
+
+# 4. Nonparametric Bootstrap: Resample from the empirical distribution
+
+B <- 1000 
+kappa_boot_np <- numeric(B)
+
+for (b in 1:B) {
+  boot_sample <- sample(sample_angles, size = n, replace = TRUE)
+  kappa_boot_np[b] <- estimate_kappa(boot_sample)
+}
+
+boot_np_mean <- mean(kappa_boot_np)
+boot_np_var  <- var(kappa_boot_np)
+cat("Nonparametric Bootstrap: Mean =", boot_np_mean, "Variance =", boot_np_var, "\n")
+
+
+hist(kappa_boot_np, breaks = 30, main = "Nonparametric Bootstrap kappa Estimates", 
+     xlab = expression(hat(kappa)), col = "lightblue", border = "gray")
+abline(v = kappa_hat, col = "red", lwd = 2, lty = 2)
+legend("topright", legend = paste("Original kappa =", round(kappa_hat, 3)),
+       col = "red", lwd = 2, lty = 2, bty = "n")
+
+
+# 5. Parametric Bootstrap: Generate new samples from the fitted model
+
+B_param <- 1000  
+kappa_boot_param <- numeric(B_param)
+
+for (b in 1:B_param) {
+
+  param_sample <- r_vonmises(n, circular_mean, kappa_hat)
+  kappa_boot_param[b] <- estimate_kappa(param_sample)
+}
+
+boot_param_mean <- mean(kappa_boot_param)
+boot_param_var  <- var(kappa_boot_param)
+cat("Parametric Bootstrap: Mean =", boot_param_mean, "Variance =", boot_param_var, "\n")
+
+
+hist(kappa_boot_param, breaks = 30, main = "Parametric Bootstrap kappa Estimates", 
+     xlab = expression(hat(kappa)), col = "lightgreen", border = "gray")
+abline(v = kappa_hat, col = "blue", lwd = 2, lty = 2)
+legend("topright", legend = paste("Original kappa =", round(kappa_hat, 3)),
+       col = "blue", lwd = 2, lty = 2, bty = "n")
+```
+
+This result indicates that, in this particular instance, the variance of the parametric bootstrap estimates is higher than that of the nonparametric bootstrap. 
+### Activity 6
+```{r}
+
+bias_np <- boot_np_mean - kappa_hat
+bias_param <- boot_param_mean - kappa_hat
+
+cat("Nonparametric bootstrap estimated bias:", bias_np, "\n")
+cat("Parametric bootstrap estimated bias:", bias_param, "\n")
+
+```
+### Activity 7
+```{r}
+
+ci_np <- quantile(kappa_boot_np, c(0.025, 0.975))
+ci_param <- quantile(kappa_boot_param, c(0.025, 0.975))
+
+cat("Nonparametric Bootstrap 95% CI:", ci_np, "\n")
+cat("Parametric Bootstrap 95% CI:", ci_param, "\n")
+
+true_kappa <- 2  # true shape parameter used in generating the data
+
+contains_true_np <- (true_kappa >= ci_np[1]) && (true_kappa <= ci_np[2])
+contains_true_param <- (true_kappa >= ci_param[1]) && (true_kappa <= ci_param[2])
+
+cat("Nonparametric CI contains true kappa?", contains_true_np, "\n")
+cat("Parametric CI contains true kappa?", contains_true_param, "\n")
+
+```
+
